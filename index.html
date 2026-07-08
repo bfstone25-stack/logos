@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Logos · 与你同行</title>
+<style>
+:root{--bg:#f5f1e8;--card:#fffdf7;--ink:#2e2a24;--accent:#8a6d3b;--soft:#e8e0d0;--muted:#8b8378}
+*{box-sizing:border-box}
+body{margin:0;font-family:Georgia,"Songti SC",serif;background:var(--bg);color:var(--ink);line-height:1.65}
+header{text-align:center;padding:32px 16px 12px}
+header h1{margin:0;font-size:30px;letter-spacing:1px}
+header p{margin:6px 0 0;color:var(--muted);font-style:italic;font-size:14px}
+.wrap{max-width:720px;margin:0 auto;padding:16px}
+.msg{background:var(--card);border:1px solid var(--soft);border-radius:12px;padding:16px 18px;margin:14px 0;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.msg.you{background:var(--soft);border:none}
+.role{font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+.answer{white-space:pre-wrap}
+.refs{margin-top:12px;padding-top:10px;border-top:1px dashed var(--soft);font-size:13px;color:var(--muted)}
+.refs b{color:var(--accent)}
+.fb{margin-top:10px;display:flex;gap:8px;align-items:center}
+.fb button{background:none;border:1px solid var(--soft);border-radius:20px;padding:4px 12px;cursor:pointer;font-size:14px}
+.fb button:hover{background:var(--soft)}
+.fb .done{color:var(--accent);font-size:13px}
+.inbar{position:sticky;bottom:0;background:var(--bg);padding:14px 0;display:flex;gap:8px}
+.inbar textarea{flex:1;resize:none;border:1px solid var(--soft);border-radius:12px;padding:12px 14px;font-family:inherit;font-size:15px;background:var(--card)}
+.inbar button{background:var(--accent);color:#fff;border:none;border-radius:12px;padding:0 22px;font-size:15px;cursor:pointer}
+.inbar button:disabled{opacity:.5}
+.hint{color:var(--muted);font-size:12px;text-align:center;margin:8px 0}
+.thinking{color:var(--muted);font-style:italic}
+</style>
+</head>
+<body>
+<header>
+  <h1>Logos</h1>
+  <p>太初有道 · 借圣经智慧，陪你走过生活的困惑</p>
+</header>
+<div class="wrap">
+  <div id="feed"></div>
+  <div class="inbar">
+    <textarea id="q" rows="2" placeholder="说说你的困惑，比如：我最近很焦虑，总担心未来…"></textarea>
+    <button id="send" onclick="ask()">问</button>
+  </div>
+  <div class="hint">Logos 借鉴圣经与实用方法论提供陪伴，不替代专业心理或医疗帮助。</div>
+</div>
+<script src="config.js"></script>
+<script>
+const feed = document.getElementById('feed');
+function el(html){const d=document.createElement('div');d.innerHTML=html;return d.firstElementChild;}
+async function ask(){
+  const q = document.getElementById('q').value.trim();
+  if(!q) return;
+  const btn = document.getElementById('send'); btn.disabled=true;
+  document.getElementById('q').value='';
+  feed.appendChild(el(`<div class="msg you"><div class="role">你</div>${q}</div>`));
+  const card = el(`<div class="msg"><div class="role">Logos</div><div class="answer thinking">正在聆听，并从经文中寻找…</div><div class="refs" style="display:none"></div><div class="fb"></div></div>`);
+  feed.appendChild(card); window.scrollTo(0,document.body.scrollHeight);
+  const ansEl = card.querySelector('.answer'), refsEl = card.querySelector('.refs');
+  let answer='', first=true;
+  try{
+    const r = await fetch(window.LOGOS_API + '/ask_stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf='';
+    while(true){
+      const {done,value} = await reader.read(); if(done) break;
+      buf += dec.decode(value,{stream:true});
+      let parts = buf.split('\n\n'); buf = parts.pop();
+      for(const part of parts){
+        if(!part.startsWith('data: ')) continue;
+        const d = JSON.parse(part.slice(6));
+        if(d.passages){ refsEl.style.display='block'; refsEl.innerHTML='经文出处：<br>'+d.passages.map(p=>`<b>${p.ref}</b> — ${p.text}`).join('<br>'); }
+        if(d.token){ if(first){ansEl.classList.remove('thinking');ansEl.textContent='';first=false;} answer+=d.token; ansEl.textContent=answer; window.scrollTo(0,document.body.scrollHeight); }
+        if(d.done){
+          card._answer=answer;
+          const fb=card.querySelector('.fb');
+          const tag = d.cached ? ' · 记忆命中' : (d.halluc? ` · 核验:剔除${d.halluc}处存疑出处`:'');
+          fb.innerHTML=`<button onclick="vote(this,1,${JSON.stringify(q).replace(/"/g,'&quot;')})">🙏 有帮助</button>
+                        <button onclick="vote(this,-1,${JSON.stringify(q).replace(/"/g,'&quot;')})">🤔 不太贴切</button>
+                        <span class="hint" style="margin-left:auto">${d.latency_s}s${tag}</span>`;
+        }
+      }
+    }
+  }catch(e){ ansEl.classList.remove('thinking'); ansEl.textContent='抱歉，出了点问题，请再试一次。'; }
+  btn.disabled=false;
+}
+async function vote(b,v,q){
+  const card = b.closest('.msg');
+  await fetch(window.LOGOS_API + '/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:q,answer:card._answer||'',vote:v,comment:''})});
+  b.parentElement.innerHTML = '<span class="done">谢谢你的反馈 · 我会继续学习</span>';
+}
+document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ask();}});
+</script>
+</body>
+</html>
