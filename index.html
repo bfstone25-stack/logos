@@ -32,6 +32,7 @@ header p{margin:6px 0 0;color:var(--muted);font-style:italic;font-size:14px}
 </head>
 <body>
 <header>
+  <div style="text-align:right;max-width:720px;margin:0 auto"><button id="langbtn" onclick="toggleLang()" style="background:none;border:1px solid #e8e0d0;border-radius:16px;padding:3px 12px;cursor:pointer;font-size:13px">中文 / EN</button></div>
   <h1>Logos</h1>
   <p>太初有道 · 借圣经智慧，陪你走过生活的困惑</p>
 </header>
@@ -45,6 +46,32 @@ header p{margin:6px 0 0;color:var(--muted);font-style:italic;font-size:14px}
 </div>
 <script src="config.js"></script>
 <script>
+const I18N = {
+  en: {sub:"In the beginning was the Word · Scripture-grounded companionship for life\'s struggles",
+       ph:"Share what weighs on you, e.g. I feel anxious about the future…", send:"Ask",
+       you:"You", think:"Listening, and searching the Scriptures…", refs:"Passages:",
+       help:"Logos offers companionship grounded in Scripture and practical wisdom; it is not a substitute for professional mental-health or medical care.",
+       up:"🙏 Helpful", down:"🤔 Not quite", thanks:"Thank you for your feedback · I keep learning", err:"Sorry, something went wrong. Please try again."},
+  zh: {sub:"太初有道 · 借圣经智慧，陪你走过生活的困惑",
+       ph:"说说你的困惑，比如：我最近很焦虑，总担心未来…", send:"问",
+       you:"你", think:"${I18N[LANG].think}", refs:"经文出处：",
+       help:"Logos 借鉴圣经与实用方法论提供陪伴，不替代专业心理或医疗帮助。",
+       up:"${I18N[LANG].up}", down:"${I18N[LANG].down}", thanks:"${I18N[LANG].thanks}", err:"${I18N[LANG].err}"}
+};
+let LANG = localStorage.getItem("logos_lang") || (navigator.language.startsWith("zh") ? "zh" : "en");
+function applyLang(){
+  const t = I18N[LANG];
+  document.querySelector("header p").textContent = t.sub;
+  document.getElementById("q").placeholder = t.ph;
+  document.getElementById("send").textContent = t.send;
+  document.querySelector(".hint").textContent = t.help;
+  document.getElementById("langbtn").textContent = LANG==="zh" ? "EN" : "中文";
+}
+function toggleLang(){ LANG = LANG==="zh"?"en":"zh"; localStorage.setItem("logos_lang",LANG); applyLang(); }
+function langName(){ return LANG==="zh" ? "Chinese" : "English"; }
+</script>
+
+<script>
 const feed = document.getElementById('feed');
 function el(html){const d=document.createElement('div');d.innerHTML=html;return d.firstElementChild;}
 async function ask(){
@@ -52,13 +79,13 @@ async function ask(){
   if(!q) return;
   const btn = document.getElementById('send'); btn.disabled=true;
   document.getElementById('q').value='';
-  feed.appendChild(el(`<div class="msg you"><div class="role">你</div>${q}</div>`));
-  const card = el(`<div class="msg"><div class="role">Logos</div><div class="answer thinking">正在聆听，并从经文中寻找…</div><div class="refs" style="display:none"></div><div class="fb"></div></div>`);
+  feed.appendChild(el(`<div class="msg you"><div class="role">${I18N[LANG].you}</div>${q}</div>`));
+  const card = el(`<div class="msg"><div class="role">Logos</div><div class="answer thinking">${I18N[LANG].think}</div><div class="refs" style="display:none"></div><div class="fb"></div></div>`);
   feed.appendChild(card); window.scrollTo(0,document.body.scrollHeight);
   const ansEl = card.querySelector('.answer'), refsEl = card.querySelector('.refs');
   let answer='', first=true;
   try{
-    const r = await fetch(window.LOGOS_API + '/ask_stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});
+    const r = await fetch(window.LOGOS_API + '/ask_stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,lang:langName()})});
     const reader = r.body.getReader(), dec = new TextDecoder(); let buf='';
     while(true){
       const {done,value} = await reader.read(); if(done) break;
@@ -67,27 +94,28 @@ async function ask(){
       for(const part of parts){
         if(!part.startsWith('data: ')) continue;
         const d = JSON.parse(part.slice(6));
-        if(d.passages){ refsEl.style.display='block'; refsEl.innerHTML='经文出处：<br>'+d.passages.map(p=>`<b>${p.ref}</b> — ${p.text}`).join('<br>'); }
+        if(d.passages){ refsEl.style.display='block'; refsEl.innerHTML=I18N[LANG].refs+'<br>'+d.passages.map(p=>`<b>${p.ref}</b> — ${p.text}`).join('<br>'); }
         if(d.token){ if(first){ansEl.classList.remove('thinking');ansEl.textContent='';first=false;} answer+=d.token; ansEl.textContent=answer; window.scrollTo(0,document.body.scrollHeight); }
         if(d.done){
           card._answer=answer;
           const fb=card.querySelector('.fb');
           const tag = d.cached ? ' · 记忆命中' : (d.halluc? ` · 核验:剔除${d.halluc}处存疑出处`:'');
-          fb.innerHTML=`<button onclick="vote(this,1,${JSON.stringify(q).replace(/"/g,'&quot;')})">🙏 有帮助</button>
-                        <button onclick="vote(this,-1,${JSON.stringify(q).replace(/"/g,'&quot;')})">🤔 不太贴切</button>
+          fb.innerHTML=`<button onclick="vote(this,1,${JSON.stringify(q).replace(/"/g,'&quot;')})">${I18N[LANG].up}</button>
+                        <button onclick="vote(this,-1,${JSON.stringify(q).replace(/"/g,'&quot;')})">${I18N[LANG].down}</button>
                         <span class="hint" style="margin-left:auto">${d.latency_s}s${tag}</span>`;
         }
       }
     }
-  }catch(e){ ansEl.classList.remove('thinking'); ansEl.textContent='抱歉，出了点问题，请再试一次。'; }
+  }catch(e){ ansEl.classList.remove('thinking'); ansEl.textContent='${I18N[LANG].err}'; }
   btn.disabled=false;
 }
 async function vote(b,v,q){
   const card = b.closest('.msg');
   await fetch(window.LOGOS_API + '/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({question:q,answer:card._answer||'',vote:v,comment:''})});
-  b.parentElement.innerHTML = '<span class="done">谢谢你的反馈 · 我会继续学习</span>';
+  b.parentElement.innerHTML = '<span class="done">${I18N[LANG].thanks}</span>';
 }
+applyLang();
 document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ask();}});
 </script>
 </body>
