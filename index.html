@@ -85,7 +85,7 @@ async function ask(){
   const ansEl = card.querySelector('.answer'), refsEl = card.querySelector('.refs');
   let answer='', first=true;
   try{
-    const r = await fetch(window.LOGOS_API + '/ask_stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,lang:langName()})});
+    const r = await fetch(window.LOGOS_API + '/ask_stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,lang:langName(),pid:(localStorage.logos_pid=localStorage.logos_pid||Math.random().toString(36).slice(2)+Date.now().toString(36))})});
     const reader = r.body.getReader(), dec = new TextDecoder(); let buf='';
     while(true){
       const {done,value} = await reader.read(); if(done) break;
